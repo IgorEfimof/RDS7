@@ -1049,7 +1049,7 @@
         document.getElementById('drawId').value = nextDrawId;
     }
     
-    // Метод холодных чисел
+    // Метод холодных чисел (оптимизированный)
     function generateColdNumbers() {
         const countField1 = Array(20).fill(0);
         const countField2 = Array(4).fill(0);
@@ -1068,15 +1068,15 @@
             };
         }
 
-        // Выбираем 6 самых редких и 2 среднечастотных числа для первого поля
+        // Выбираем 5 самых редких и 3 среднечастотных числа для первого поля
         let numbers1 = Array.from({ length: 20 }, (_, i) => i + 1);
         numbers1.sort((a, b) => countField1[a - 1] - countField1[b - 1]);
         
-        // Берем 6 самых холодных
-        const coldNumbers = numbers1.slice(0, 6);
+        // Берем 5 самых холодных
+        const coldNumbers = numbers1.slice(0, 5);
         
-        // Берем 2 среднечастотных (из середины списка)
-        const mediumNumbers = numbers1.slice(9, 11);
+        // Берем 3 среднечастотных (из середины списка)
+        const mediumNumbers = numbers1.slice(9, 12);
         
         const selected1 = [...coldNumbers, ...mediumNumbers].sort((a, b) => a - b);
 
@@ -1088,123 +1088,99 @@
         return { nums1: selected1, num2: selected2 };
     }
     
-    // Метод Огнева
+    // Метод Огнева (исправленный)
     function generateOgnevaNumbers() {
-        if(history.length < 5) {
+        if (history.length < 3) {
             return generateColdNumbers();
         }
-        
-        // Рассчитываем среднее характеристическое число
-        let totalOgneva = 0;
+
+        // Правильный расчет среднего характеристического числа
+        let totalSum = 0;
         history.forEach(entry => {
-            const sum1 = entry.field1.reduce((a, b) => a + b, 0);
-            totalOgneva += sum1 * entry.field2;
+            totalSum += entry.field1.reduce((a, b) => a + b, 0) + entry.field2;
         });
-        const avgOgneva = totalOgneva / history.length;
-        
-        // Генерируем комбинации и выбираем лучшую
+        const avg = totalSum / history.length;
+
+        // Генерация чисел в диапазоне среднего значения
+        const center = Math.round(avg / 2);
+        const range = 3;
+
         let bestCombination = null;
         let bestDiff = Infinity;
-        
-        for(let i = 0; i < 100; i++) {
+
+        for (let attempt = 0; attempt < 50; attempt++) {
             const nums1 = [];
-            while(nums1.length < 8) {
-                const n = Math.floor(Math.random() * 20) + 1;
-                if(!nums1.includes(n)) nums1.push(n);
+            while (nums1.length < 8) {
+                const base = Math.max(1, Math.min(20, center + Math.floor(Math.random() * (range * 2 + 1)) - range));
+                if (!nums1.includes(base)) nums1.push(base);
             }
             nums1.sort((a, b) => a - b);
-            const num2 = Math.floor(Math.random() * 4) + 1;
             
-            const sum1 = nums1.reduce((a, b) => a + b, 0);
-            const ogneva = sum1 * num2;
-            const diff = Math.abs(ogneva - avgOgneva);
+            const num2 = Math.max(1, Math.min(4, Math.round(center / 5) || Math.floor(Math.random() * 4) + 1));
             
-            if(diff < bestDiff) {
+            const currentSum = nums1.reduce((a, b) => a + b, 0) + num2;
+            const diff = Math.abs(currentSum - avg);
+            
+            if (diff < bestDiff) {
                 bestDiff = diff;
                 bestCombination = { nums1, num2 };
             }
         }
-        
-        return bestCombination || { 
-            nums1: generateRandomNumbers(), 
-            num2: Math.floor(Math.random() * 4) + 1 
-        };
+
+        return bestCombination || generateColdNumbers();
     }
     
-    // Метод Карнауха
+    // Метод Карнауха (исправленный)
     function generateKarnaughNumbers() {
+        if (history.length < 5) {
+            return generateColdNumbers();
+        }
+
+        const countField1 = Array(20).fill(0);
+        history.forEach(entry => {
+            entry.field1.forEach(n => countField1[n - 1]++);
+        });
+
+        const numbers = Array.from({ length: 20 }, (_, i) => i + 1);
+        numbers.sort((a, b) => countField1[a - 1] - countField1[b - 1]);
+
+        // Правильный выбор диапазонов
+        const coldNumbers = numbers.slice(0, 3); // 3 самых холодных
+        const mediumNumbers = numbers.slice(8, 12); // 4 средних
+        const hotNumbers = numbers.slice(17, 20); // 3 самых горячих
+        
+        // Комбинирование и проверка уникальности
+        const combined = [...new Set([...coldNumbers, ...mediumNumbers, ...hotNumbers])];
+        const selected1 = combined.slice(0, 8).sort((a, b) => a - b);
+
+        // Оптимальный выбор для второго поля
+        const countField2 = Array(4).fill(0);
+        history.forEach(entry => countField2[entry.field2 - 1]++);
+        const num2 = countField2.indexOf(Math.max(...countField2)) + 1;
+
+        return { nums1: selected1, num2 };
+    }
+    
+    // Антипрогноз (исправленный)
+    function generateAntiNumbers() {
         const countField1 = Array(20).fill(0);
         const countField2 = Array(4).fill(0);
 
         history.forEach(entry => {
-            entry.field1.forEach(n => {
-                if(n >= 1 && n <= 20) countField1[n - 1]++;
-            });
-            if(entry.field2 >= 1 && entry.field2 <= 4) countField2[entry.field2 - 1]++;
+            entry.field1.forEach(n => countField1[n - 1]++);
+            countField2[entry.field2 - 1]++;
         });
 
-        if(history.length < 10) {
-            return generateColdNumbers();
-        }
+        // Выбираем наименее популярные числа
+        const numbers = Array.from({ length: 20 }, (_, i) => i + 1);
+        numbers.sort((a, b) => countField1[a - 1] - countField1[b - 1]);
         
-        // Сортируем числа по частоте выпадения
-        let numbers1 = Array.from({ length: 20 }, (_, i) => i + 1);
-        numbers1.sort((a, b) => countField1[a - 1] - countField1[b - 1]);
-        
-        // Выбираем 4 холодных, 3 горячих и 1 среднее число
-        const coldNumbers = numbers1.slice(0, 4);
-        const hotNumbers = numbers1.slice(-3).reverse();
-        const mediumNumbers = [numbers1[10]];
-        const selected1 = [...coldNumbers, ...hotNumbers, ...mediumNumbers].sort((a, b) => a - b);
-        
-        // Для второго поля выбираем среднее по частоте
-        let numbers2 = Array.from({ length: 4 }, (_, i) => i + 1);
-        numbers2.sort((a, b) => countField2[a - 1] - countField2[b - 1]);
-        const selected2 = numbers2[1] || numbers2[0];
-        
-        return { nums1: selected1, num2: selected2 };
-    }
-    
-    // Антипрогноз
-    function generateAntiNumbers() {
-        // Генерируем прогнозы другими методами
-        const coldNumbers = generateColdNumbers().nums1;
-        const ognevaNumbers = generateOgnevaNumbers().nums1;
-        const karnaughNumbers = generateKarnaughNumbers().nums1;
-        
-        // Собираем все числа, которые часто встречаются в прогнозах
-        const popularNumbers = new Set([...coldNumbers, ...ognevaNumbers, ...karnaughNumbers]);
-        
-        // Генерируем комбинацию из наименее популярных чисел
-        let numbers1 = Array.from({ length: 20 }, (_, i) => i + 1);
-        numbers1 = numbers1.filter(n => !popularNumbers.has(n));
-        
-        // Если не хватает чисел, добавляем случайные
-        while(numbers1.length < 8) {
-            const randomNum = Math.floor(Math.random() * 20) + 1;
-            if(!numbers1.includes(randomNum)) {
-                numbers1.push(randomNum);
-            }
-        }
-        
-        // Выбираем 8 чисел
-        const selected1 = numbers1.slice(0, 8).sort((a, b) => a - b);
-        
-        // Для второго поля выбираем число, которое реже всего выпадало
-        const countField2 = Array(4).fill(0);
-        history.forEach(entry => {
-            if(entry.field2 >= 1 && entry.field2 <= 4) countField2[entry.field2 - 1]++;
-        });
-        
-        let minCount = Math.min(...countField2);
-        let leastFrequent = [];
-        countField2.forEach((count, idx) => {
-            if(count === minCount) leastFrequent.push(idx + 1);
-        });
-        
-        const selected2 = leastFrequent[Math.floor(Math.random() * leastFrequent.length)] || 1;
-        
-        return { nums1: selected1, num2: selected2 };
+        const selected1 = numbers.slice(0, 8).sort((a, b) => a - b);
+
+        // Выбираем наименее популярное число для второго поля
+        const leastFrequent = countField2.indexOf(Math.min(...countField2)) + 1;
+
+        return { nums1: selected1, num2: leastFrequent };
     }
     
     // Случайная генерация (вспомогательная)
@@ -1257,6 +1233,22 @@
     updateStats();
     updateWinStats();
     renderHistory();
+    
+    // Генерация тестовых данных при первом запуске
+    if (history.length === 0 && localStorage.getItem('testDataAdded') !== 'true') {
+        for (let i = 1; i <= 30; i++) {
+            history.push({
+                drawId: i.toString(),
+                field1: generateRandomNumbers(),
+                field2: Math.floor(Math.random() * 4) + 1,
+                timestamp: new Date().toISOString()
+            });
+        }
+        saveHistory();
+        localStorage.setItem('testDataAdded', 'true');
+        updateStats();
+        renderHistory();
+    }
 </script>
 </body>
 </html>
