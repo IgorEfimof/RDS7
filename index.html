@@ -3,10 +3,6 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <link rel="apple-touch-icon" sizes="180x180" href="icons/icon180.png">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="RDS7">
-    <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Рапидо Старт с LSTM</title>
     <!-- Загрузка TensorFlow.js -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
@@ -1365,7 +1361,7 @@
         }, 100);
     }
 
-    // --- LSTM Модель ---
+    // --- LSTM Модель (ИСПРАВЛЕННАЯ) ---
     let lstmModel = null;
     let isTraining = false;
     const trainingStatus = document.getElementById('trainingStatus');
@@ -1382,10 +1378,9 @@
         
         // Проверяем наличие сохраненной модели
         try {
-            const models = await tf.io.listModels();
-            if (models['indexeddb://rapido-lstm-model']) {
+            const modelInfo = JSON.parse(localStorage.getItem('lstmModelInfo') || '{}');
+            if (modelInfo.modelExists) {
                 lstmModel = await tf.loadLayersModel('indexeddb://rapido-lstm-model');
-                const modelInfo = JSON.parse(localStorage.getItem('lstmModelInfo') || '{}');
                 modelAccuracy.textContent = modelInfo.accuracy ? `${modelInfo.accuracy}%` : '0%';
                 trainingMessage.textContent = 'Модель загружена';
                 return;
@@ -1399,24 +1394,30 @@
         trainingMessage.textContent = 'Готово к обучению';
     }
     
-    // Создание архитектуры модели
+    // Создание архитектуры модели (УЛУЧШЕННАЯ)
     function createModel() {
         lstmModel = tf.sequential();
         
-        // Добавляем LSTM слои
+        // Улучшенная архитектура
         lstmModel.add(tf.layers.lstm({
-            units: 64,
+            units: 128,
             inputShape: [10, 24],
             returnSequences: true
         }));
         
-        lstmModel.add(tf.layers.dropout({rate: 0.2}));
+        lstmModel.add(tf.layers.dropout({rate: 0.3}));
         
         lstmModel.add(tf.layers.lstm({
-            units: 32
+            units: 64,
+            returnSequences: false
         }));
         
-        lstmModel.add(tf.layers.dropout({rate: 0.2}));
+        lstmModel.add(tf.layers.dropout({rate: 0.3}));
+        
+        lstmModel.add(tf.layers.dense({
+            units: 48,
+            activation: 'relu'
+        }));
         
         // Выходной слой
         lstmModel.add(tf.layers.dense({
@@ -1426,7 +1427,7 @@
         
         // Компиляция модели
         lstmModel.compile({
-            optimizer: tf.train.adam(0.001),
+            optimizer: tf.train.adam(0.0005), // Меньше learning rate
             loss: 'binaryCrossentropy',
             metrics: ['accuracy']
         });
@@ -1488,7 +1489,7 @@
         };
     }
     
-    // Обучение модели
+    // Обучение модели (УЛУЧШЕННОЕ)
     async function trainModel() {
         if (isTraining || history.length < 15) return;
         
@@ -1511,15 +1512,20 @@
         try {
             // Обучение модели
             const historyInfo = await lstmModel.fit(data.X, data.y, {
-                epochs: 50,
-                batchSize: 8,
+                epochs: 100, // Больше эпох
+                batchSize: 16, // Больше размер батча
                 validationSplit: 0.2,
                 callbacks: {
                     onEpochEnd: async (epoch, logs) => {
-                        trainingMessage.textContent = `Эпоха ${epoch + 1}/50...`;
-                        trainingProgress.style.width = `${((epoch + 1) / 50) * 100}%`;
+                        trainingMessage.textContent = `Эпоха ${epoch + 1}/100...`;
+                        trainingProgress.style.width = `${((epoch + 1) / 100) * 100}%`;
                         modelAccuracy.textContent = `${Math.round(logs.acc * 100)}%`;
                         await tf.nextFrame(); // Даем браузеру обновиться
+                        
+                        // Ранняя остановка при достижении хорошего результата
+                        if (logs.val_loss < 0.1) {
+                            lstmModel.stopTraining = true;
+                        }
                     }
                 }
             });
@@ -1532,7 +1538,8 @@
             localStorage.setItem('lstmModelInfo', JSON.stringify({
                 accuracy: accuracy,
                 trainedAt: new Date().toISOString(),
-                dataSize: history.length
+                dataSize: history.length,
+                modelExists: true
             }));
             
             modelAccuracy.textContent = `${accuracy}%`;
@@ -1551,7 +1558,7 @@
         }
     }
     
-    // Генерация чисел с помощью LSTM
+    // Генерация чисел с помощью LSTM (ИСПРАВЛЕННАЯ)
     async function generateLSTMNumbers() {
         if (!lstmModel || history.length < 10) {
             return generateColdNumbers(); // Fallback
@@ -1587,32 +1594,73 @@
             prediction.dispose();
             input.dispose();
             
-            // Обрабатываем результаты для поля 1
-            const field1Probs = [];
-            for (let i = 0; i < 20; i++) {
-                field1Probs.push({ number: i + 1, prob: values[i] });
+            // 1. Нормализуем вероятности для поля 1
+            const field1Probs = values.slice(0, 20);
+            const sum1 = field1Probs.reduce((a, b) => a + b, 0);
+            const normalizedProbs1 = sum1 > 0 ? 
+                field1Probs.map(p => p / sum1) : 
+                Array(20).fill(1/20);
+            
+            // 2. Выбираем числа с учетом вероятностей (не просто топ-8)
+            const nums1 = [];
+            const availableNumbers = Array.from({ length: 20 }, (_, i) => i + 1);
+            
+            for (let i = 0; i < 8; i++) {
+                // Создаем распределение вероятностей
+                let rand = Math.random();
+                let cumulative = 0;
+                let selectedIndex = 0;
+                
+                for (let j = 0; j < availableNumbers.length; j++) {
+                    const num = availableNumbers[j];
+                    cumulative += normalizedProbs1[num-1];
+                    if (rand <= cumulative) {
+                        selectedIndex = j;
+                        break;
+                    }
+                }
+                
+                nums1.push(availableNumbers[selectedIndex]);
+                availableNumbers.splice(selectedIndex, 1);
+                
+                // Пересчитываем вероятности для оставшихся чисел
+                const newSum = availableNumbers.reduce(
+                    (sum, num) => sum + normalizedProbs1[num-1], 0
+                );
+                
+                if (newSum > 0) {
+                    for (let j = 0; j < availableNumbers.length; j++) {
+                        const num = availableNumbers[j];
+                        normalizedProbs1[num-1] /= newSum;
+                    }
+                }
             }
             
-            field1Probs.sort((a, b) => b.prob - a.prob);
-            const nums1 = field1Probs
-                .slice(0, 8)
-                .map(item => item.number)
-                .sort((a, b) => a - b);
+            nums1.sort((a, b) => a - b);
             
-            // Обрабатываем результаты для поля 2
+            // 3. Выбираем число для поля 2
+            const field2Probs = values.slice(20, 24);
+            const sum2 = field2Probs.reduce((a, b) => a + b, 0);
+            const normalizedProbs2 = sum2 > 0 ? 
+                field2Probs.map(p => p / sum2) : 
+                Array(4).fill(0.25);
+            
+            let rand = Math.random();
+            let cumulative = 0;
             let field2Num = 1;
-            let maxProb = 0;
+            
             for (let i = 0; i < 4; i++) {
-                if (values[20 + i] > maxProb) {
-                    maxProb = values[20 + i];
+                cumulative += normalizedProbs2[i];
+                if (rand <= cumulative) {
                     field2Num = i + 1;
+                    break;
                 }
             }
             
             return { nums1, num2: field2Num };
         } catch (e) {
             console.error('Ошибка генерации LSTM:', e);
-            return generateColdNumbers(); // Fallback при ошибке
+            return generateColdNumbers();
         }
     }
     
