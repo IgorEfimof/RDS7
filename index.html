@@ -1103,17 +1103,27 @@
 
         // Генерация чисел в диапазоне среднего значения
         const center = Math.round(avg / 2);
-        const range = 6;
+        const range = 3;
 
         let bestCombination = null;
         let bestDiff = Infinity;
 
         for (let attempt = 0; attempt < 50; attempt++) {
             const nums1 = [];
-            while (nums1.length < 8) {
+            let attempts = 0;
+            
+            // Защита от бесконечного цикла
+            while (nums1.length < 8 && attempts < 100) {
                 const base = Math.max(1, Math.min(20, center + Math.floor(Math.random() * (range * 2 + 1)) - range));
-                if (!nums1.includes(base)) nums1.push(base);
+                if (!nums1.includes(base)) {
+                    nums1.push(base);
+                }
+                attempts++;
             }
+            
+            // Если не удалось сгенерировать 8 чисел, пропускаем попытку
+            if (nums1.length < 8) continue;
+            
             nums1.sort((a, b) => a - b);
             
             const num2 = Math.max(1, Math.min(4, Math.round(center / 5) || Math.floor(Math.random() * 4) + 1));
@@ -1151,7 +1161,20 @@
         
         // Комбинирование и проверка уникальности
         const combined = [...new Set([...coldNumbers, ...mediumNumbers, ...hotNumbers])];
-        const selected1 = combined.slice(0, 8).sort((a, b) => a - b);
+        
+        // Если получилось меньше 8 чисел, добиваем случайными
+        let selected1 = combined.slice(0, 8);
+        if (selected1.length < 8) {
+            const allNumbers = Array.from({ length: 20 }, (_, i) => i + 1);
+            const availableNumbers = allNumbers.filter(n => !selected1.includes(n));
+            
+            while (selected1.length < 8 && availableNumbers.length > 0) {
+                const randomIndex = Math.floor(Math.random() * availableNumbers.length);
+                selected1.push(availableNumbers.splice(randomIndex, 1)[0]);
+            }
+        }
+        
+        selected1 = selected1.slice(0, 8).sort((a, b) => a - b);
 
         // Оптимальный выбор для второго поля
         const countField2 = Array(4).fill(0);
@@ -1178,18 +1201,27 @@
         const selected1 = numbers.slice(0, 8).sort((a, b) => a - b);
 
         // Выбираем наименее популярное число для второго поля
-        const leastFrequent = countField2.indexOf(Math.min(...countField2)) + 1;
-
-        return { nums1: selected1, num2: leastFrequent };
+        const minCount = Math.min(...countField2);
+        const leastFrequent = [];
+        countField2.forEach((count, idx) => {
+            if(count === minCount) leastFrequent.push(idx + 1);
+        });
+        
+        const selected2 = leastFrequent[Math.floor(Math.random() * leastFrequent.length)] || 1;
+        
+        return { nums1: selected1, num2: selected2 };
     }
     
     // Случайная генерация (вспомогательная)
     function generateRandomNumbers() {
         const nums1 = [];
-        while(nums1.length < 8) {
-            const n = Math.floor(Math.random() * 20) + 1;
-            if(!nums1.includes(n)) nums1.push(n);
+        const availableNumbers = Array.from({ length: 20 }, (_, i) => i + 1);
+        
+        while (nums1.length < 8 && availableNumbers.length > 0) {
+            const randomIndex = Math.floor(Math.random() * availableNumbers.length);
+            nums1.push(availableNumbers.splice(randomIndex, 1)[0]);
         }
+        
         nums1.sort((a, b) => a - b);
         return nums1;
     }
