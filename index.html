@@ -1375,27 +1375,45 @@
     const modelDataSize = document.getElementById('modelDataSize');
     const trainModelBtn = document.getElementById('trainModelBtn');
     
-    // Инициализация модели
+    // Инициализация модели (ИСПРАВЛЕННАЯ ВЕРСИЯ)
     async function initModel() {
         trainingStatus.style.display = 'block';
         trainingMessage.textContent = 'Инициализация модели...';
+        modelDataSize.textContent = history.length;
         
-        // Проверяем наличие сохраненной модели
         try {
+            // Проверяем наличие сохраненной модели
             const modelInfo = JSON.parse(localStorage.getItem('lstmModelInfo') || '{}');
+            
             if (modelInfo.modelExists) {
-                lstmModel = await tf.loadLayersModel('indexeddb://rapido-lstm-model');
-                modelAccuracy.textContent = modelInfo.accuracy ? `${modelInfo.accuracy}%` : '0%';
-                trainingMessage.textContent = 'Модель загружена';
-                return;
+                try {
+                    // Пробуем загрузить модель
+                    lstmModel = await tf.loadLayersModel('indexeddb://rapido-lstm-model');
+                    modelAccuracy.textContent = modelInfo.accuracy ? `${modelInfo.accuracy}%` : '0%';
+                    trainingMessage.textContent = 'Модель загружена';
+                    
+                    // ЗАПУСКАЕМ ОБУЧЕНИЕ ПРИ НАЛИЧИИ НОВЫХ ДАННЫХ
+                    if (history.length > modelInfo.dataSize && history.length >= 15) {
+                        setTimeout(trainModel, 1000);
+                    }
+                    return;
+                } catch (e) {
+                    console.error('Ошибка загрузки модели:', e);
+                    trainingMessage.textContent = 'Ошибка загрузки модели, создаём новую';
+                }
             }
         } catch (e) {
-            console.log('Модель не найдена, создаем новую', e);
+            console.log('Ошибка чтения метаданных модели', e);
         }
         
         // Создаем новую модель
         createModel();
         trainingMessage.textContent = 'Готово к обучению';
+        
+        // ЗАПУСКАЕМ ОБУЧЕНИЕ ПРИ НАЛИЧИИ ДАННЫХ
+        if (history.length >= 15) {
+            setTimeout(trainModel, 1000);
+        }
     }
     
     // Создание архитектуры модели (УЛУЧШЕННАЯ)
@@ -1537,12 +1555,12 @@
             // Сохраняем модель
             await lstmModel.save('indexeddb://rapido-lstm-model');
             
-            // Сохраняем метаданные
+            // Сохраняем метаданные (ОБНОВЛЯЕМ РАЗМЕР ДАННЫХ)
             const accuracy = Math.round(historyInfo.history.acc[historyInfo.history.acc.length - 1] * 100);
             localStorage.setItem('lstmModelInfo', JSON.stringify({
                 accuracy: accuracy,
                 trainedAt: new Date().toISOString(),
-                dataSize: history.length,
+                dataSize: history.length, // ЗАПОМИНАЕМ ТЕКУЩИЙ РАЗМЕР ДАННЫХ
                 modelExists: true
             }));
             
@@ -1554,7 +1572,6 @@
         } finally {
             isTraining = false;
             trainModelBtn.disabled = false;
-            // Освобождаем память
             if (data) {
                 data.X.dispose();
                 data.y.dispose();
@@ -1679,11 +1696,6 @@
         
         // Инициализируем LSTM модель
         await initModel();
-        
-        // Автоматическое обучение при наличии данных
-        if (history.length >= 15) {
-            setTimeout(trainModel, 1000);
-        }
     });
 </script>
 </body>
