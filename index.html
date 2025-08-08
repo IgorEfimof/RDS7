@@ -473,6 +473,35 @@
             margin-top: 10px;
             background: var(--lstm-color) !important;
         }
+        
+        /* Новые стили для управления стоимостью билета */
+        .ticket-price-container {
+            display: flex;
+            align-items: center;
+            margin-top: 15px;
+            padding: 10px;
+            background: rgba(0, 102, 204, 0.1);
+            border-radius: 8px;
+        }
+        .ticket-price-container label {
+            margin-right: 10px;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        .ticket-price-input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--card-bg);
+            color: var(--text-color);
+            font-size: 15px;
+        }
+        .ticket-price-btn {
+            margin-left: 10px;
+            padding: 8px 15px;
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
@@ -538,6 +567,13 @@
         
         <div class="card">
             <h2>Статистика выигрышей</h2>
+            <!-- Контейнер для управления стоимостью билета -->
+            <div class="ticket-price-container">
+                <label>Стоимость билета (₽):</label>
+                <input type="number" id="ticketPriceInput" class="ticket-price-input" min="1" step="1" value="150">
+                <button id="updatePriceBtn" class="ticket-price-btn">Обновить</button>
+            </div>
+            
             <div class="win-stats" id="winStats"></div>
         </div>
         
@@ -651,8 +687,9 @@
     let history = JSON.parse(localStorage.getItem('rapidoHistory') || '[]');
     let bets = JSON.parse(localStorage.getItem('rapidoBets') || '[]');
     
-    // ИЗМЕНЕНО: Установка стоимости билета в 150 рублей
-    const ticketPrice = 150;
+    // Инициализация стоимости билета
+    let ticketPrice = localStorage.getItem('ticketPrice') || 150;
+    ticketPrice = parseInt(ticketPrice, 10);
     
     // Статистика выигрышей
     let winStats = JSON.parse(localStorage.getItem('rapidoWinStats') || JSON.stringify({
@@ -693,6 +730,11 @@
     // Сохраняем историю
     function saveHistory() {
         localStorage.setItem('rapidoHistory', JSON.stringify(history));
+    }
+    
+    // Сохраняем стоимость билета
+    function saveTicketPrice() {
+        localStorage.setItem('ticketPrice', ticketPrice);
     }
 
     // --- Кастомная клавиатура ---
@@ -1095,10 +1137,9 @@
                 // Отображаем числа
                 displayNumbers(generatedNumbers.nums1, generatedNumbers.num2, currentMethod);
                 
-                // Увеличиваем счетчик ставок и сумму потраченных средств
+                // Увеличиваем счетчик ставок
                 if(winStats[currentMethod]) {
                     winStats[currentMethod].bets++;
-                    // ИЗМЕНЕНО: Используем новую стоимость билета (150 рублей)
                     winStats[currentMethod].spent += ticketPrice;
                     winStats[currentMethod].balance = winStats[currentMethod].won - winStats[currentMethod].spent;
                     updateWinStats();
@@ -1143,10 +1184,9 @@
         // Отображаем числа
         displayNumbers(generatedNumbers.nums1, generatedNumbers.num2, currentMethod);
         
-        // Увеличиваем счетчик ставок и сумму потраченных средств
+        // Увеличиваем счетчик ставок
         if(winStats[currentMethod]) {
             winStats[currentMethod].bets++;
-            // ИЗМЕНЕНО: Используем новую стоимость билета (150 рублей)
             winStats[currentMethod].spent += ticketPrice;
             winStats[currentMethod].balance = winStats[currentMethod].won - winStats[currentMethod].spent;
             updateWinStats();
@@ -1724,6 +1764,29 @@
     document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('genBtn').addEventListener('click', generateNumbers);
         trainModelBtn.addEventListener('click', trainModel);
+        
+        // Установка стоимости билета в поле ввода
+        document.getElementById('ticketPriceInput').value = ticketPrice;
+        
+        // Обработчик изменения стоимости билета
+        document.getElementById('updatePriceBtn').addEventListener('click', () => {
+            const newPrice = parseInt(document.getElementById('ticketPriceInput').value);
+            if (isNaN(newPrice) || newPrice < 1) {
+                alert("Введите корректную стоимость билета (минимум 1 рубль)");
+                return;
+            }
+            
+            // Пересчет статистики с новой стоимостью
+            for (const method in winStats) {
+                winStats[method].spent = winStats[method].bets * newPrice;
+                winStats[method].balance = winStats[method].won - winStats[method].spent;
+            }
+            
+            ticketPrice = newPrice;
+            saveTicketPrice();
+            saveWinStats();
+            updateWinStats();
+        });
         
         updateStats();
         updateWinStats();
